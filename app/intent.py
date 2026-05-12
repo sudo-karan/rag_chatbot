@@ -2,63 +2,66 @@ import json
 import re
 from app.llm import complete
 
-INTENT_PROMPT_TEMPLATE = """You are an intent classifier for a Government Data Portal chatbot. Classify the user message into exactly one intent.
+INTENT_PROMPT_TEMPLATE = """You are an intent classifier for the data.gov.in (Open Government Data Platform India) chatbot. Classify the user message into exactly one intent.
 
 Intents:
-- search: user EXPLICITLY asks to find, search, browse, list, or download datasets / data files. Trigger words: "search", "find dataset", "list datasets", "show me data", "download data", "is there a dataset on...", "any datasets about...".
-- cdo_details: user asks for contact info, name, email, or role of a Chief Data Officer (CDO) — by name, ministry, or state.
-- dataset_cdo_link: user supplies a dataset URL and asks who uploaded / owns / is responsible for it.
-- portal_feedback: user wants to give feedback / complaint / suggestion about the PORTAL itself (the website, performance, UX).
-- contact_cdo: user wants to give feedback about a SPECIFIC dataset, or wants to be put in touch with the CDO behind a dataset.
-- rag_chat: DEFAULT for everything else, including any informational / factual / explanatory question, definitions, "what is", "tell me about", "how does", "why", follow-ups, greetings, and small talk. When unsure, choose rag_chat.
+- search: user EXPLICITLY asks to find, search, browse, list, or download datasets / catalogs / resources on data.gov.in. Trigger words: "search", "find dataset", "list catalogs", "show me data on", "download data", "is there a dataset on...", "any datasets about...", "datasets on <sector>".
+- cdo_details: user asks for contact info, name, email, or role of a Chief Data Officer (CDO), Data Controller, or Nodal Officer — by name, ministry, department, or state.
+- dataset_cdo_link: user supplies a data.gov.in catalog or resource URL and asks who uploaded / owns / is responsible for it.
+- portal_feedback: user wants to give feedback / complaint / suggestion about the data.gov.in PORTAL itself (website, dashboard, search, performance, UX, login).
+- contact_cdo: user wants to give feedback about a SPECIFIC dataset (wrong values, missing rows, stale data), or wants to be put in touch with the CDO behind a dataset.
+- rag_chat: DEFAULT for everything else, including any informational / factual / explanatory question about NDSAP, the portal, CDOs, formats, APIs, accessibility, terms of use, etc. Definitions ("what is NDSAP", "what is a High-Value Dataset"), "tell me about", "how does", greetings, small talk, follow-ups. When unsure, choose rag_chat.
 
 Important rules:
-- "Tell me about X", "What is X", "Explain X", "How are X grown", "Nutritional value of X" → rag_chat (NOT search). The user wants an answer, not a list of files.
-- Only pick search if the user clearly wants a dataset / file / data resource, not a textual explanation.
-- Greetings, thanks, yes/no, follow-ups → rag_chat.
+- "What is NDSAP", "Tell me about CDOs", "How do I register" → rag_chat (NOT search). The user wants an answer, not a dataset listing.
+- Only pick search if the user clearly wants a dataset / catalog / resource, not a textual explanation.
+- Greetings (hi, hello, namaste), thanks, follow-ups → rag_chat.
 
 Reply with ONLY a JSON object. No explanation. No markdown. No extra text.
 Format: {{"intent": "<intent>", "extracted": "<extracted info or empty string>"}}
 
-For search: extracted = search keyword(s)
-For cdo_details: extracted = name, ministry, or state mentioned
+For search: extracted = search keyword(s) or sector / ministry
+For cdo_details: extracted = name, ministry, department or state mentioned
 For dataset_cdo_link: extracted = the dataset URL
 For portal_feedback: extracted = ""
 For contact_cdo: extracted = dataset name or URL if mentioned, else ""
 For rag_chat: extracted = ""
 
 Examples:
-User message: Tell me about the nutritional value of oranges
+User message: What is NDSAP?
 JSON: {{"intent": "rag_chat", "extracted": ""}}
 
-User message: What is an orange?
+User message: How do I get an API key?
 JSON: {{"intent": "rag_chat", "extracted": ""}}
 
-User message: How are oranges cultivated in India?
+User message: What is a High-Value Dataset?
 JSON: {{"intent": "rag_chat", "extracted": ""}}
 
-User message: Find me datasets about rice production
-JSON: {{"intent": "search", "extracted": "rice production"}}
+User message: Find datasets on monsoon rainfall
+JSON: {{"intent": "search", "extracted": "monsoon rainfall"}}
 
-User message: Search for healthcare data
-JSON: {{"intent": "search", "extracted": "healthcare"}}
+User message: Show me Consumer Price Index data
+JSON: {{"intent": "search", "extracted": "Consumer Price Index"}}
 
-User message: Is there a dataset on orange exports?
-JSON: {{"intent": "search", "extracted": "orange exports"}}
+User message: Are there any agriculture sector catalogs?
+JSON: {{"intent": "search", "extracted": "agriculture"}}
 
-User message: Who is the CDO of the Ministry of Agriculture?
+User message: Who is the Chief Data Officer of Ministry of Agriculture?
 JSON: {{"intent": "cdo_details", "extracted": "Ministry of Agriculture"}}
 
-User message: Who uploaded https://data.gov.in/dataset/rice-2023 ?
-JSON: {{"intent": "dataset_cdo_link", "extracted": "https://data.gov.in/dataset/rice-2023"}}
+User message: Nodal Officer for Department of Health
+JSON: {{"intent": "cdo_details", "extracted": "Department of Health"}}
 
-User message: The portal is very slow today
+User message: Who uploaded https://data.gov.in/catalog/cpi-2024 ?
+JSON: {{"intent": "dataset_cdo_link", "extracted": "https://data.gov.in/catalog/cpi-2024"}}
+
+User message: The data.gov.in dashboard is buggy, please fix
 JSON: {{"intent": "portal_feedback", "extracted": ""}}
 
-User message: I want to report wrong numbers in the Nagpur orange dataset
-JSON: {{"intent": "contact_cdo", "extracted": "Nagpur orange dataset"}}
+User message: I have a correction for the rainfall dataset
+JSON: {{"intent": "contact_cdo", "extracted": "rainfall dataset"}}
 
-User message: hello
+User message: hi
 JSON: {{"intent": "rag_chat", "extracted": ""}}
 
 {context_block}User message: {message}
