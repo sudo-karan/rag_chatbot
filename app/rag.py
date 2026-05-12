@@ -1,8 +1,13 @@
-from app.config import SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_URL, RAG_TOP_K
+from app.config import SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_URL, RAG_TOP_K, LLM_MODERATION_ENABLED
 from app.llm import chat
 from app.vector_store import query as vector_query
 from app.embedder import embed_one
-from app.moderation import filter_relevant_chunks, is_politically_sensitive
+from app.moderation import (
+    filter_relevant_chunks,
+    is_politically_sensitive,
+    is_sensitive_llm,
+    is_in_scope,
+)
 from app.predefined_qa import find_best_predefined_answer
 
 
@@ -55,9 +60,22 @@ def answer(user_message: str, conversation_history: list[dict], known_topics_sum
     if is_politically_sensitive(user_message):
         return POLITICAL_REFUSAL.format(support_text=support_text)
 
+    if LLM_MODERATION_ENABLED and is_sensitive_llm(user_message):
+        return POLITICAL_REFUSAL.format(support_text=support_text)
+
     predefined = find_best_predefined_answer(user_message)
     if predefined:
         return predefined
+
+    in_scope, _, _ = is_in_scope(user_message)
+    if not in_scope:
+        redirect_hint = ""
+        if known_topics_summary:
+            redirect_hint = f"I do have information about: {known_topics_summary}. Would you like to know more about any of these?"
+        return OUT_OF_SCOPE_RESPONSE.format(
+            redirect_hint=redirect_hint,
+            support_text=support_text,
+        )
 
     query_emb = embed_one(user_message)
     raw_chunks = vector_query(query_emb, n_results=RAG_TOP_K)
