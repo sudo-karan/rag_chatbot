@@ -14,9 +14,11 @@ def is_politically_sensitive(message: str) -> bool:
     return any(kw in msg_lower for kw in POLITICAL_KEYWORDS)
 
 
-SENSITIVE_PROMPT = """Decide whether the following user message is about any of these sensitive topics:
+SENSITIVE_PROMPT = """Decide whether the user message is about any of these sensitive topics.
+
+Sensitive topics (answer "yes"):
 - Partisan politics: elections, political parties, politicians, political ideology, government-policy debates
-- Geopolitics: foreign relations, international conflicts, territorial disputes, wars between countries
+- Geopolitics: foreign relations, international conflicts between countries, territorial disputes, wars
 - Religion, religious groups, communal matters, sectarian issues
 - Caste, reservation policy, ethnic groups
 - Military, armed forces, defense operations, security forces
@@ -24,12 +26,44 @@ SENSITIVE_PROMPT = """Decide whether the following user message is about any of 
 - Personal medical, financial, or legal advice
 - Violence, terrorism, extremism, illegal activities
 
-Sports, science, geography, technology, factual history, entertainment, and general knowledge are NOT sensitive — answer "no" for those.
+NOT sensitive (answer "no"):
+- Sports of any kind, including international tournaments and world cups
+- Science, geography, technology, mathematics
+- Factual history (events, dates, biographies) — but NOT ongoing political controversies
+- Entertainment: movies, books, music, games, food, travel
+- General knowledge, trivia, definitions
+- Government data portals, datasets, public administration logistics
+- Greetings, small talk, asking what the assistant can do
+
+Examples:
+Message: who won the cricket world cup
+Answer: no
+Message: how is FIFA organised
+Answer: no
+Message: olympic games 2024 medal table
+Answer: no
+Message: tell me about the south china sea dispute
+Answer: yes
+Message: what is photosynthesis
+Answer: no
+Message: BJP election results
+Answer: yes
+Message: recommend a movie
+Answer: no
+Message: kashmir issue
+Answer: yes
+Message: nutritional value of oranges
+Answer: no
+Message: how do I download a dataset
+Answer: no
+Message: what is the army's role in disaster relief
+Answer: yes
+Message: history of the roman empire
+Answer: no
 
 Reply with ONLY "yes" or "no". No explanation. No punctuation.
 
-User message: {message}
-
+Message: {message}
 Answer:"""
 
 
