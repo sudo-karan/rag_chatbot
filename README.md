@@ -65,10 +65,9 @@ ollama serve
 
 # Pull the default model (~4.7 GB, one-time)
 ollama pull llama3.1:8b
-
-# Generate the sample PDF
-python create_sample_pdf.py
 ```
+
+PDFs in `pdfs/` are ingested on first startup. Drop in additional PDFs and either restart the server or run `python ingest.py --force` to re-index.
 
 Verify Ollama is reachable:
 
