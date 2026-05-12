@@ -14,16 +14,17 @@ def is_politically_sensitive(message: str) -> bool:
     return any(kw in msg_lower for kw in POLITICAL_KEYWORDS)
 
 
-SENSITIVE_PROMPT = """Classify whether the following user message is about any of these sensitive topics:
-- Politics, elections, political parties, politicians, political ideology
-- Geopolitics, foreign relations, international conflicts, territorial disputes, wars
+SENSITIVE_PROMPT = """Decide whether the following user message is about any of these sensitive topics:
+- Partisan politics: elections, political parties, politicians, political ideology, government-policy debates
+- Geopolitics: foreign relations, international conflicts, territorial disputes, wars between countries
 - Religion, religious groups, communal matters, sectarian issues
 - Caste, reservation policy, ethnic groups
 - Military, armed forces, defense operations, security forces
 - Legal advice, court cases, judicial rulings, ongoing litigation
 - Personal medical, financial, or legal advice
 - Violence, terrorism, extremism, illegal activities
-- Public figures' personal lives or controversies
+
+Sports, science, geography, technology, factual history, entertainment, and general knowledge are NOT sensitive — answer "no" for those.
 
 Reply with ONLY "yes" or "no". No explanation. No punctuation.
 
@@ -53,22 +54,22 @@ def _ensure_scope_embeddings():
         _scope_embeddings = embed(SCOPE_TOPICS) if SCOPE_TOPICS else []
 
 
-def is_in_scope(message: str) -> tuple[bool, float, int]:
-    """
-    Semantic check against SCOPE_TOPICS. Returns (in_scope, best_score, best_index).
-    in_scope = best_score >= SCOPE_THRESHOLD.
-    """
+def prototype_scope_score(query_emb: list[float]) -> float:
+    """Max cosine similarity between the query embedding and any SCOPE_TOPICS example."""
     if not SCOPE_TOPICS:
-        return True, 1.0, -1
-    from app.embedder import embed_one, cosine_similarity
+        return 1.0
+    from app.embedder import cosine_similarity
     _ensure_scope_embeddings()
-    q = embed_one(message)
-    best_score, best_idx = -1.0, -1
-    for i, topic_emb in enumerate(_scope_embeddings):
-        score = cosine_similarity(q, topic_emb)
-        if score > best_score:
-            best_score, best_idx = score, i
-    return best_score >= SCOPE_THRESHOLD, best_score, best_idx
+    best = -1.0
+    for topic_emb in _scope_embeddings:
+        score = cosine_similarity(query_emb, topic_emb)
+        if score > best:
+            best = score
+    return best
+
+
+def prototype_scope_pass(query_emb: list[float]) -> bool:
+    return prototype_scope_score(query_emb) >= SCOPE_THRESHOLD
 
 
 def has_relevant_context(rag_chunks: list[dict]) -> bool:

@@ -6,7 +6,7 @@ from app.moderation import (
     filter_relevant_chunks,
     is_politically_sensitive,
     is_sensitive_llm,
-    is_in_scope,
+    prototype_scope_pass,
 )
 from app.predefined_qa import find_best_predefined_answer
 
@@ -53,6 +53,14 @@ I can help you with questions about datasets, the portal, Chief Data Officers, o
 
 For further assistance, please reach out to: {support_text}"""
 
+CONVERSATIONAL_HELP_RESPONSE = """Hello! I'm an assistant for the Government Open Data Portal. I can help you with:
+- Information from our documentation{known_topics_line}
+- Searching for and downloading datasets
+- Contact details for Chief Data Officers (CDOs)
+- Giving feedback or reporting issues with a dataset or the portal
+
+What would you like to know?"""
+
 
 def answer(user_message: str, conversation_history: list[dict], known_topics_summary: str = "") -> str:
     support_text = build_support_text()
@@ -67,21 +75,14 @@ def answer(user_message: str, conversation_history: list[dict], known_topics_sum
     if predefined:
         return predefined
 
-    in_scope, _, _ = is_in_scope(user_message)
-    if not in_scope:
-        redirect_hint = ""
-        if known_topics_summary:
-            redirect_hint = f"I do have information about: {known_topics_summary}. Would you like to know more about any of these?"
-        return OUT_OF_SCOPE_RESPONSE.format(
-            redirect_hint=redirect_hint,
-            support_text=support_text,
-        )
-
     query_emb = embed_one(user_message)
     raw_chunks = vector_query(query_emb, n_results=RAG_TOP_K)
     relevant_chunks = filter_relevant_chunks(raw_chunks)
 
-    if not relevant_chunks:
+    corpus_in_scope = bool(relevant_chunks)
+    proto_in_scope = prototype_scope_pass(query_emb)
+
+    if not corpus_in_scope and not proto_in_scope:
         redirect_hint = ""
         if known_topics_summary:
             redirect_hint = f"I do have information about: {known_topics_summary}. Would you like to know more about any of these?"
@@ -89,6 +90,10 @@ def answer(user_message: str, conversation_history: list[dict], known_topics_sum
             redirect_hint=redirect_hint,
             support_text=support_text,
         )
+
+    if not corpus_in_scope:
+        known_topics_line = f" (e.g. {known_topics_summary})" if known_topics_summary else ""
+        return CONVERSATIONAL_HELP_RESPONSE.format(known_topics_line=known_topics_line)
 
     context_parts = []
     for i, chunk in enumerate(relevant_chunks, 1):

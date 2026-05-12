@@ -24,15 +24,35 @@ QA_MATCH_THRESHOLD = float(os.getenv("QA_MATCH_THRESHOLD", "0.75"))
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "5"))
 
 LLM_MODERATION_ENABLED = os.getenv("LLM_MODERATION_ENABLED", "true").lower() == "true"
-SCOPE_THRESHOLD = float(os.getenv("SCOPE_THRESHOLD", "0.25"))
+SCOPE_THRESHOLD = float(os.getenv("SCOPE_THRESHOLD", "0.45"))
 
 DEFAULT_SCOPE_TOPICS = [
-    "Greeting, small talk, or asking what this assistant can do",
-    "Government Open Data Portal — what it is, how it works, accessing it",
-    "Datasets on the portal — searching, downloading, browsing, file formats",
-    "Chief Data Officers (CDOs) — contact details, ministries, roles, responsibilities",
-    "Feedback, complaints, or reporting issues about the portal or a dataset",
-    "Topics described in the portal documentation PDFs",
+    "hi",
+    "hello",
+    "hey there",
+    "good morning",
+    "what can you do",
+    "what can you help me with",
+    "help",
+    "what topics do you cover",
+    "what is this portal",
+    "tell me about this website",
+    "what does this site do",
+    "how does this portal work",
+    "how do I download a dataset",
+    "where can I find data on this",
+    "what data is available",
+    "are there datasets about this",
+    "in what format are datasets available",
+    "how do I search for a dataset",
+    "who is the chief data officer",
+    "how do I contact a CDO",
+    "which ministry owns this dataset",
+    "I want to report an issue with a dataset",
+    "give feedback about the portal",
+    "the portal is not working",
+    "contact the data owner",
+    "this dataset has wrong information",
 ]
 
 
