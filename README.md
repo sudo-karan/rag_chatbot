@@ -101,6 +101,61 @@ Open the auto-generated docs at `http://localhost:8000/docs`.
 
 ---
 
+## 6a. Running with Docker
+
+Two services in `docker-compose.yml`: `ollama` (official image) and `app` (built from the local `Dockerfile`). The app reaches Ollama at `http://ollama:11434` over the internal compose network.
+
+One-time setup:
+
+```bash
+cp .env.example .env                  # adjust if you have custom values
+docker compose build                  # build the app image
+docker compose up -d ollama           # start Ollama and wait for healthcheck
+docker exec datagovin-ollama ollama pull llama3.1:8b   # one-time model pull (~4.7 GB)
+docker compose up -d app              # start the chatbot API on :8000
+```
+
+Verify:
+
+```bash
+curl http://localhost:8000/health
+curl http://localhost:11434/api/tags
+```
+
+Daily commands:
+
+```bash
+docker compose up -d         # bring everything up
+docker compose logs -f app   # follow the chatbot logs
+docker compose down          # stop, preserve volumes
+docker compose down -v       # stop AND wipe volumes (Ollama models, HF cache)
+```
+
+Volumes:
+
+| Mount | Type | Purpose |
+|---|---|---|
+| `ollama_models` | named | Ollama model files (large; survives rebuilds). |
+| `hf_cache` | named | sentence-transformer model cache. |
+| `./pdfs` | bind | Drop new PDFs here from the host; restart `app` or run `docker exec datagovin-chatbot python ingest.py --force` to re-index. |
+| `./chroma_db` | bind | Persistent vector store; visible from the host. |
+
+Swap the LLM model:
+
+```bash
+docker exec datagovin-ollama ollama pull qwen2.5:14b      # or llama3.1:70b-instruct-q4_K_M, etc.
+# edit OLLAMA_MODEL in .env
+docker compose restart app
+```
+
+Notes:
+
+- The app container needs internet on first boot to download the sentence-transformer (`all-MiniLM-L6-v2`, ~90 MB). It's cached in the `hf_cache` volume thereafter.
+- Bind-mounted `pdfs/` and `chroma_db/` are owned by root inside the container by default. If host-side permissions are awkward, switch them to named volumes.
+- GPU passthrough: add `deploy.resources.reservations.devices` to the `ollama` service when you wire up an NVIDIA card. Worth doing if you move to a 70b model.
+
+---
+
 ## 7. API endpoints
 
 | Method | Path                       | Description                                |
