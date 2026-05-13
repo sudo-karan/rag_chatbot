@@ -33,7 +33,7 @@ The same codebase runs on a laptop, on a 32-core / 128 GB workstation, and on a 
 The chatbot:
 
 - Answers questions strictly from the seven data.gov.in PDFs in `pdfs/` (About, Help, FAQ, NDSAP Implementation Guidelines, Terms of Use, Miscellaneous Policies, Accessibility Statement) and from the 12 predefined Q&A pairs in `.env`.
-- Routes user messages to one of six intents — `search`, `cdo_details`, `dataset_cdo_link`, `portal_feedback`, `contact_cdo`, or `rag_chat` — via a small-model JSON classifier; the five non-RAG intents call mocked `app/apis.py` functions.
+- Routes user messages to one of seven intents — `search`, `cdo_details`, `dataset_cdo_link`, `portal_feedback`, `contact_cdo`, `retry`, or `rag_chat` — via a small-model JSON classifier; the five non-RAG intents call mocked `app/apis.py` functions, and `retry` re-runs the user's clarified question through RAG with the predefined-Q&A fast-path disabled (no keyword-matching for dissatisfaction — the classifier learns it from few-shot examples).
 - Runs a four-stage moderation pipeline before generation: keyword pre-filter, LLM categorical moderator (`SAFE` / `POLITICAL` / `INJECTION` / `OOS`), semantic scope allowlist, and optional post-generation grounding verification. Defense is positional and structural, not enumerative.
 - **Streams** the RAG answer token-by-token over HTTP SSE and to the terminal — first words appear in ~1 s instead of the user staring at a blank prompt for 30 s.
 - Requires disclaimer acceptance before every chat session and maintains per-session conversation history (in-memory).
@@ -61,15 +61,21 @@ The chatbot:
 │ Disclaimer │ → │ Intent classifier  │ → │ Non-RAG: mocked API  │
 │  gate      │   │  (helper model)    │   │  → emit & history    │
 └────────────┘   └────────────────────┘   └──────────────────────┘
-                          │ (rag_chat)
-                          ▼
+                  │
+                  ├─ retry (with prior turn) → RAG path with QA fast-path
+                  │                            disabled; prefix the answer
+                  │                            with "Apologies — let me
+                  │                            try that again."
+                  │
+                  ▼ (rag_chat)
             ┌─────────────────────────────┐
             │ 1. Categorical moderator    │  SAFE → continue
             │   (helper, max 4 tokens)    │  POLITICAL → POL refusal
             │                             │  INJECTION → INJ refusal
             │                             │  OOS → OOS refusal
             ├─────────────────────────────┤
-            │ 2. Predefined Q&A           │  semantic match ≥ 0.75 → emit
+            │ 2. Predefined Q&A           │  semantic match ≥ 0.85 → emit
+            │   (skipped on retry)        │
             ├─────────────────────────────┤
             │ 3. Retrieve top-K chunks    │
             │   + filter by relevance     │
@@ -84,6 +90,18 @@ The chatbot:
             │    verifier (helper)        │  streaming: append warning
             └─────────────────────────────┘
 ```
+
+### Retry — handling user dissatisfaction
+
+When a user follows up with a contrastive correction (`no no I am asking about responsibilities of CDO`, `actually I meant who enforces it`, `that's not what I meant`), the intent classifier emits `retry` with `extracted` containing the clarified question. The chat handler then:
+
+1. Bypasses the predefined-Q&A fast-path (`skip_predefined_qa=True`) so the same canned answer doesn't fire again.
+2. Re-runs the **clarified** query through RAG so the bot grounds in the actual documentation chunks.
+3. Prefixes the reply with `"Apologies for the previous reply — let me try that again."` so the user sees their dissatisfaction was registered.
+
+Detection is **not keyword-based**. The helper model recognises the *shape* of dissatisfaction (contrastive markers tied to a re-stated question, in the presence of a previous assistant turn) via four few-shot examples — three positive (`no no`, `actually`, `that's not what I meant`) and two negative (`got it, thanks`, `and what about Y` as a satisfied topic shift). New phrasings the model has never seen get caught structurally the same way the categorical moderator catches new injection patterns.
+
+`retry` only fires when there's a prior assistant turn in the session history. On the first turn, the classifier defaults to `rag_chat`.
 
 ### Injection defense
 
@@ -472,7 +490,7 @@ Profile-driven defaults: per-knob `.env` always wins; otherwise the active hardw
 | `PDF_FOLDER`                 | `./pdfs`                                 | Folder scanned at startup.                         |
 | `RAG_RELEVANCE_THRESHOLD`    | `0.45`                                   | Min cosine similarity to keep a chunk.             |
 | `RAG_TOP_K`                  | `5`                                      | Top-K chunks per retrieval.                        |
-| `QA_MATCH_THRESHOLD`         | `0.75`                                   | Min similarity to match a predefined Q.            |
+| `QA_MATCH_THRESHOLD`         | `0.85`                                   | Min cosine similarity to match a predefined Q. Raised from 0.75 to 0.85 so loose paraphrases fall through to RAG instead of returning an over-eager canned answer. |
 | `EMBED_BATCH_SIZE`           | profile embed_batch_size                 | sentence-transformer batch size.                   |
 
 ### Moderation & scope
@@ -522,6 +540,8 @@ For air-gapped Docker, do the same on a machine with internet, then `docker save
 | `WARNING: Predefined Q&A look misaligned with SCOPE_TOPICS`                    | `.env` is from a different domain (e.g. the generic baseline). Sync from `.env.example`.                                              |
 | `WARNING: Vector store is empty (0 chunks)`                                    | No PDFs ingested. Drop PDFs into `pdfs/` and run `python ingest.py --force`.                                                          |
 | Bot replies with `CONVERSATIONAL_HELP_RESPONSE` to a real question             | Predefined Q&A missed AND no chunks above `RAG_RELEVANCE_THRESHOLD`. Re-ingest with the right corpus, or lower the threshold.         |
+| Loose paraphrase returns a wrong canned QA answer                              | `QA_MATCH_THRESHOLD` is too low. Default is 0.85; bump higher if false matches persist. Or send a follow-up like `no, I meant <clarification>` — the `retry` intent re-runs through RAG. |
+| Retry doesn't fire on `no no, I meant X`                                       | Confirm there's a prior assistant turn in the session (retry needs context). If yes, add another `retry` few-shot example to `INTENT_PROMPT_TEMPLATE`. |
 | Bot answers a political question                                              | `LLM_MODERATION_ENABLED=false`? Set it back to `true`. Otherwise add a few-shot example to `SENSITIVITY_PROMPT`.                       |
 | Cricket / sports question wrongly hits `POLITICAL_REFUSAL`                    | Moderator over-flagging. Strengthen the OOS examples in `SENSITIVITY_PROMPT`.                                                         |
 | Cold start of ~10 s on each turn                                              | `OLLAMA_KEEP_ALIVE` is too short. Set to `-1` (or jump to `large` profile).                                                          |

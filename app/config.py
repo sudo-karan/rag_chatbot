@@ -31,7 +31,7 @@ CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./chroma_db")
 PDF_FOLDER = os.getenv("PDF_FOLDER", "./pdfs")
 
 RAG_RELEVANCE_THRESHOLD = float(os.getenv("RAG_RELEVANCE_THRESHOLD", "0.45"))
-QA_MATCH_THRESHOLD = float(os.getenv("QA_MATCH_THRESHOLD", "0.75"))
+QA_MATCH_THRESHOLD = float(os.getenv("QA_MATCH_THRESHOLD", "0.85"))
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "5"))
 
 LLM_MODERATION_ENABLED = os.getenv("LLM_MODERATION_ENABLED", "true").lower() == "true"

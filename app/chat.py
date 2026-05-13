@@ -56,9 +56,17 @@ def _preamble(session, user_message: str) -> str | None:
     return None
 
 
+RETRY_PREFIX = "Apologies for the previous reply — let me try that again.\n\n"
+
+
+def _is_retry(session, intent: str) -> bool:
+    """Retry intent only fires when there's an actual previous turn to retry."""
+    return intent == "retry" and len(session.history) >= 2
+
+
 def _route_non_rag(session, user_message: str, intent: str, extracted: str) -> str | None:
     """Resolve non-RAG intents to their canned/API string. Returns None when
-    the intent is rag_chat (caller handles RAG)."""
+    the intent is rag_chat or retry (caller handles RAG)."""
     if intent == "search":
         return search_datasets(extracted or user_message)
     if intent == "cdo_details":
@@ -98,6 +106,13 @@ def process_message(session_id: str, user_message: str) -> str:
     routed = _route_non_rag(session, user_message, intent, extracted)
     if routed is not None:
         response = routed
+    elif _is_retry(session, intent):
+        clarified = extracted or user_message
+        history_for_rag = [m for m in session.history if m["role"] in ("user", "assistant")]
+        known_topics = get_known_topics()
+        response = RETRY_PREFIX + answer(
+            clarified, history_for_rag, known_topics, skip_predefined_qa=True
+        )
     else:
         known_topics = get_known_topics()
         history_for_rag = [m for m in session.history if m["role"] in ("user", "assistant")]
@@ -139,10 +154,21 @@ def process_message_stream(session_id: str, user_message: str):
 
     known_topics = get_known_topics()
     history_for_rag = [m for m in session.history if m["role"] in ("user", "assistant")]
-    chunks: list[str] = []
-    for chunk in answer_stream(user_message, history_for_rag, known_topics):
-        chunks.append(chunk)
-        yield chunk
+
+    if _is_retry(session, intent):
+        clarified = extracted or user_message
+        yield RETRY_PREFIX
+        chunks: list[str] = [RETRY_PREFIX]
+        for chunk in answer_stream(
+            clarified, history_for_rag, known_topics, skip_predefined_qa=True
+        ):
+            chunks.append(chunk)
+            yield chunk
+    else:
+        chunks = []
+        for chunk in answer_stream(user_message, history_for_rag, known_topics):
+            chunks.append(chunk)
+            yield chunk
 
     response = "".join(chunks)
     add_to_history(session_id, "user", user_message)

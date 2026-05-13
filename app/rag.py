@@ -82,12 +82,16 @@ def _oos(known_topics_summary: str, support_text: str) -> str:
     return OUT_OF_SCOPE_RESPONSE.format(redirect_hint=redirect_hint, support_text=support_text)
 
 
-def _gate(user_message: str, support_text: str, known_topics_summary: str):
+def _gate(user_message: str, support_text: str, known_topics_summary: str, skip_predefined_qa: bool = False):
     """Run moderation, predefined-QA, scope, and retrieval gates.
+
+    skip_predefined_qa: when True (retry path), bypass the QA fast-match so a
+    user who explicitly clarified "no, I meant X" goes straight to RAG instead
+    of getting another canned QA answer.
 
     Returns either:
       ("terminal", <final response string>) — caller emits and stops.
-      ("rag", <context_str>, <messages>)   — caller proceeds to LLM generation.
+      ("rag", <context_str>)                — caller proceeds to LLM generation.
     """
     if LLM_MODERATION_ENABLED:
         label = classify_moderation(user_message)
@@ -98,9 +102,10 @@ def _gate(user_message: str, support_text: str, known_topics_summary: str):
         if label == "OOS":
             return ("terminal", _oos(known_topics_summary, support_text))
 
-    predefined = find_best_predefined_answer(user_message)
-    if predefined:
-        return ("terminal", predefined)
+    if not skip_predefined_qa:
+        predefined = find_best_predefined_answer(user_message)
+        if predefined:
+            return ("terminal", predefined)
 
     query_emb = embed_one(user_message)
     raw_chunks = vector_query(query_emb, n_results=RAG_TOP_K)
@@ -127,9 +132,14 @@ VERIFY_WARNING_FOOTER = (
 )
 
 
-def answer(user_message: str, conversation_history: list[dict], known_topics_summary: str = "") -> str:
+def answer(
+    user_message: str,
+    conversation_history: list[dict],
+    known_topics_summary: str = "",
+    skip_predefined_qa: bool = False,
+) -> str:
     support_text = build_support_text()
-    decision = _gate(user_message, support_text, known_topics_summary)
+    decision = _gate(user_message, support_text, known_topics_summary, skip_predefined_qa)
     if decision[0] == "terminal":
         return decision[1]
 
@@ -150,15 +160,22 @@ def answer(user_message: str, conversation_history: list[dict], known_topics_sum
     return response
 
 
-def answer_stream(user_message: str, conversation_history: list[dict], known_topics_summary: str = ""):
+def answer_stream(
+    user_message: str,
+    conversation_history: list[dict],
+    known_topics_summary: str = "",
+    skip_predefined_qa: bool = False,
+):
     """Generator version of answer(). Yields incremental string chunks.
 
     Refusal / template responses are emitted as a single chunk. The grounded
     RAG answer is streamed token-by-token. Because already-streamed tokens
     cannot be retracted, the grounding verifier (if enabled) APPENDS a
-    warning footer on failure instead of replacing the answer."""
+    warning footer on failure instead of replacing the answer.
+
+    skip_predefined_qa: see answer()."""
     support_text = build_support_text()
-    decision = _gate(user_message, support_text, known_topics_summary)
+    decision = _gate(user_message, support_text, known_topics_summary, skip_predefined_qa)
     if decision[0] == "terminal":
         yield decision[1]
         return
