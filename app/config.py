@@ -24,6 +24,7 @@ QA_MATCH_THRESHOLD = float(os.getenv("QA_MATCH_THRESHOLD", "0.75"))
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "5"))
 
 LLM_MODERATION_ENABLED = os.getenv("LLM_MODERATION_ENABLED", "true").lower() == "true"
+ENABLE_OUTPUT_VERIFICATION = os.getenv("ENABLE_OUTPUT_VERIFICATION", "false").lower() == "true"
 SCOPE_THRESHOLD = float(os.getenv("SCOPE_THRESHOLD", "0.45"))
 
 DEFAULT_SCOPE_TOPICS = [
