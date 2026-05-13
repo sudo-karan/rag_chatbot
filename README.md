@@ -156,6 +156,59 @@ Notes:
 
 ---
 
+## 6b. Hardware profiles
+
+The app detects host RAM, CPU cores, and GPU at boot and picks a profile from `app/profile.py`. The profile bundles the model + Ollama runtime options the rest of the app should use, so the same codebase runs sensibly on a laptop, a workstation, or a cloud VM.
+
+| Profile | Trigger | Main model | Helper model | `keep_alive` | Output verifier |
+|---|---|---|---|---|---|
+| `tiny` | < 16 GB RAM, no GPU | `llama3.2:3b` | `llama3.2:1b` | 5 m | off |
+| `small` | 16–32 GB RAM, no GPU | `llama3.1:8b` | `llama3.2:1b` | 5 m | off |
+| `medium` | 32–64 GB RAM, no GPU | `llama3.1:8b` | `llama3.2:1b` | 30 m | on |
+| `large` | 64+ GB RAM, no GPU | `llama3.1:8b` | `llama3.2:1b` | forever (pinned) | on |
+| `xl` | any NVIDIA GPU detected | `llama3.1:70b` | `llama3.1:8b` | forever (pinned) | on |
+
+The active profile is printed at startup, e.g.:
+
+```
+[profile] active=large (auto) | main=llama3.1:8b helper=llama3.2:1b | keep_alive=-1 | verify=True | ram=128.0GB cores=32 gpu=False
+```
+
+### Overrides
+
+Auto-detection often misreads container limits (a 128 GB host running an 8 GB container looks like a `tiny` box from inside). Force a tier via:
+
+```bash
+export PROFILE_OVERRIDE=large
+```
+
+Or override individual knobs without changing tiers:
+
+```dotenv
+OLLAMA_MODEL=qwen2.5:14b           # main RAG model
+OLLAMA_HELPER_MODEL=llama3.2:3b    # moderator / intent / verifier
+OLLAMA_KEEP_ALIVE=-1               # how long Ollama holds models in RAM
+OLLAMA_NUM_THREAD=0                # 0 = let Ollama decide
+OLLAMA_NUM_CTX=8192                # context window for the main model
+EMBED_BATCH_SIZE=128               # sentence-transformer batch size
+ENABLE_OUTPUT_VERIFICATION=true    # post-generation grounding check
+```
+
+Whatever's in `.env` wins over the profile defaults.
+
+### When to bump up
+
+| Symptom | Suggested change |
+|---|---|
+| Answers feel slow on a big box | `PROFILE_OVERRIDE=large` (pins models, raises ctx and embed batch). |
+| Bot occasionally hallucinates a fact | `ENABLE_OUTPUT_VERIFICATION=true` (or jump to `medium`+). |
+| Moderator/intent latency too high | Already on helper model; nothing to do unless you switch the *main* model. |
+| You added a GPU | `PROFILE_OVERRIDE=xl` (or just leave auto — `nvidia-smi` check kicks in). |
+
+Each profile is just a dataclass in `app/profile.py:PROFILES`; add or edit entries there for custom tiers.
+
+---
+
 ## 7. API endpoints
 
 | Method | Path                       | Description                                |

@@ -1,5 +1,6 @@
 from sentence_transformers import SentenceTransformer
 import numpy as np
+from app.config import EMBED_BATCH_SIZE
 
 _model: SentenceTransformer | None = None
 
@@ -13,7 +14,12 @@ def get_model() -> SentenceTransformer:
 
 def embed(texts: list[str]) -> list[list[float]]:
     model = get_model()
-    vectors = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
+    vectors = model.encode(
+        texts,
+        convert_to_numpy=True,
+        normalize_embeddings=True,
+        batch_size=EMBED_BATCH_SIZE,
+    )
     return vectors.tolist()
 
 

@@ -3,8 +3,19 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from app.profile import ACTIVE_PROFILE, PROFILE_INFO
+
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+
+# Per-role models. Env wins, profile is the spec-aware fallback.
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or ACTIVE_PROFILE.main_model
+OLLAMA_HELPER_MODEL = os.getenv("OLLAMA_HELPER_MODEL") or ACTIVE_PROFILE.helper_model
+
+# Ollama runtime tuning, also profile-driven with env override.
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE") or ACTIVE_PROFILE.keep_alive
+OLLAMA_NUM_THREAD = int(os.getenv("OLLAMA_NUM_THREAD", ACTIVE_PROFILE.num_thread))
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", ACTIVE_PROFILE.num_ctx))
+EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", ACTIVE_PROFILE.embed_batch_size))
 
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@portal.gov")
 SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "1800-XXX-XXXX")
@@ -24,7 +35,12 @@ QA_MATCH_THRESHOLD = float(os.getenv("QA_MATCH_THRESHOLD", "0.75"))
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "5"))
 
 LLM_MODERATION_ENABLED = os.getenv("LLM_MODERATION_ENABLED", "true").lower() == "true"
-ENABLE_OUTPUT_VERIFICATION = os.getenv("ENABLE_OUTPUT_VERIFICATION", "false").lower() == "true"
+# ENABLE_OUTPUT_VERIFICATION default comes from the profile; env wins.
+_verification_env = os.getenv("ENABLE_OUTPUT_VERIFICATION")
+ENABLE_OUTPUT_VERIFICATION = (
+    _verification_env.lower() == "true" if _verification_env is not None
+    else ACTIVE_PROFILE.enable_verification
+)
 SCOPE_THRESHOLD = float(os.getenv("SCOPE_THRESHOLD", "0.45"))
 
 DEFAULT_SCOPE_TOPICS = [
