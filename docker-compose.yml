@@ -6,6 +6,11 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
+    environment:
+      # Pin loaded models in RAM forever. The app overrides per-call via the
+      # active profile's keep_alive, but this is a safety floor for the
+      # daemon itself.
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "ollama", "list"]
@@ -25,6 +30,11 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - CHROMA_DB_PATH=/app/chroma_db
       - PDF_FOLDER=/app/pdfs
+      # Force a specific hardware tier; leave unset for auto-detection.
+      # Set this when running in a container that has cgroup limits the
+      # auto-detector can't see (e.g. on a 128 GB host running an 8 GB
+      # container -> set PROFILE_OVERRIDE=large).
+      - PROFILE_OVERRIDE=${PROFILE_OVERRIDE:-}
     volumes:
       - ./pdfs:/app/pdfs
       - ./chroma_db:/app/chroma_db

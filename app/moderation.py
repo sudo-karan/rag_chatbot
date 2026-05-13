@@ -75,9 +75,9 @@ Label:"""
 def classify_moderation(message: str) -> str:
     """Returns one of MODERATION_LABELS. Defaults to 'SAFE' on parse error
     (downstream scope gate will still catch obvious OOS)."""
-    from app.llm import complete
+    from app.llm import helper
     try:
-        raw = complete(SENSITIVITY_PROMPT.format(message=message), max_tokens=4, temperature=0.0)
+        raw = helper(SENSITIVITY_PROMPT.format(message=message), max_tokens=4, temperature=0.0)
         stripped = raw.strip()
         if not stripped:
             return "SAFE"
@@ -105,9 +105,9 @@ Answer:"""
 
 def is_output_grounded(response: str, context: str) -> bool:
     """Cheap LLM-as-judge check. Returns True on parse error (fail-open)."""
-    from app.llm import complete
+    from app.llm import helper
     try:
-        raw = complete(
+        raw = helper(
             GROUNDING_PROMPT.format(context=context[:4000], response=response[:1500]),
             max_tokens=4,
             temperature=0.0,

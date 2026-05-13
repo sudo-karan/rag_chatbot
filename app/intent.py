@@ -1,6 +1,6 @@
 import json
 import re
-from app.llm import complete
+from app.llm import helper
 
 INTENT_PROMPT_TEMPLATE = """You are an intent classifier for the data.gov.in (Open Government Data Platform India) chatbot. Classify the user message into exactly one intent.
 
@@ -81,7 +81,7 @@ def classify_intent(message: str, conversation_context: str = "") -> dict:
 
     raw = ""
     try:
-        raw = complete(prompt, max_tokens=80, temperature=0.0)
+        raw = helper(prompt, max_tokens=80, temperature=0.0)
         raw = raw.strip()
         json_match = re.search(r'\{[^}]+\}', raw)
         if json_match:
