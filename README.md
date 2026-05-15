@@ -421,6 +421,67 @@ Chunking rules: sentence-aligned, ~400 char target / 600 char max, last sentence
 
 ---
 
+## 9a. Dataset directory (backs the mocked APIs)
+
+The five intent-routed functions in `app/apis.py` (`search_datasets`, `get_cdo_details`, `get_dataset_cdo`, `submit_portal_feedback`, `contact_cdo_or_dataset_feedback`) are no longer returning hardcoded strings. They look up real records from a CSV (or JSON) file on disk — your local mirror of the data.gov.in dataset directory.
+
+### CSV schema
+
+Required columns (exact header names):
+
+| Column              | Example                                              |
+|---------------------|------------------------------------------------------|
+| `title`             | `All-India Consumer Price Index 2024`                |
+| `url`               | `https://data.gov.in/catalog/cpi-2024`               |
+| `contributor_name`  | `Dr. Priya Sharma`                                   |
+| `contributor_email` | `cdo.mospi@gov.in`                                   |
+
+Optional columns (loader silently ignores unknown headers, so the schema can grow without code changes):
+
+| Column          | Used for                                                |
+|-----------------|---------------------------------------------------------|
+| `ministry`      | Surfaced in `get_cdo_details` and search results.       |
+| `sector`        | Surfaced in search results.                             |
+| `last_updated`  | Surfaced in search results.                             |
+
+See `datasets.csv.example` in the repo for a working sample. Drop your real file at `./datasets.csv` (gitignored) or override the path with `DATASETS_FILE` in `.env`.
+
+### Lookup behaviour
+
+- **Search** (`search_datasets`) — semantic ranking of titles via `all-MiniLM-L6-v2`. Title embeddings cached at first call; per-query cost is one embed + one cosine per record (~1 ms for K=1000).
+- **URL lookup** (`get_dataset_cdo`) — exact match into a `dict[url, record]` index, falls back to substring so trailing slashes / resource-vs-catalog URLs / UTM tags still resolve.
+- **Contributor lookup** (`get_cdo_details`) — case-insensitive substring on `contributor_name`, `contributor_email`, OR `ministry`.
+
+### When `datasets.csv` is missing
+
+The loader prints one `WARNING` line at boot and `is_configured()` returns False. The three read APIs return a polite "directory not configured" message; the two write APIs continue to work (they log to JSONL even without dataset records).
+
+### Feedback log
+
+The two write APIs (`submit_portal_feedback`, `contact_cdo_or_dataset_feedback`) append a JSONL record to `FEEDBACK_LOG_FILE` (default `./feedback_log.jsonl`, also gitignored) and return a ticket id:
+
+```
+PFB-20250515-a1b2c3d4   # portal feedback
+DFB-20250515-e5f6g7h8   # dataset-specific feedback (routed to a contributor)
+CDO-20250515-i9j0k1l2   # generic CDO contact (no specific dataset)
+```
+
+Each line looks like:
+
+```json
+{
+  "ticket_id": "DFB-20250515-e5f6g7h8",
+  "kind": "dataset_feedback",
+  "created_at": "2025-05-15T14:30:00Z",
+  "dataset_ref": "https://data.gov.in/catalog/cpi-2024",
+  "routed_to": {"name": "Dr. Priya Sharma", "email": "cdo.mospi@gov.in"}
+}
+```
+
+This is the simplest durable record. When you wire real email/ticketing, replace `_log_feedback()` in `app/apis.py` with the live POST and keep the JSONL as a local audit trail.
+
+---
+
 ## 10. Adding predefined Q&A
 
 In `.env`, add entries:
@@ -488,6 +549,8 @@ Profile-driven defaults: per-knob `.env` always wins; otherwise the active hardw
 |------------------------------|------------------------------------------|----------------------------------------------------|
 | `CHROMA_DB_PATH`             | `./chroma_db`                            | Persistent ChromaDB folder.                        |
 | `PDF_FOLDER`                 | `./pdfs`                                 | Folder scanned at startup.                         |
+| `DATASETS_FILE`              | `./datasets.csv`                         | Dataset directory CSV (backs the mocked APIs).     |
+| `FEEDBACK_LOG_FILE`          | `./feedback_log.jsonl`                   | Append-only JSONL of portal / dataset feedback tickets. |
 | `RAG_RELEVANCE_THRESHOLD`    | `0.45`                                   | Min cosine similarity to keep a chunk.             |
 | `RAG_TOP_K`                  | `5`                                      | Top-K chunks per retrieval.                        |
 | `QA_MATCH_THRESHOLD`         | `0.85`                                   | Min cosine similarity to match a predefined Q. Raised from 0.75 to 0.85 so loose paraphrases fall through to RAG instead of returning an over-eager canned answer. |

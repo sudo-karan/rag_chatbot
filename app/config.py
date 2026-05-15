@@ -30,6 +30,9 @@ CONTACT_CDO_API_URL = os.getenv("CONTACT_CDO_API_URL", "https://api.example.gov/
 CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./chroma_db")
 PDF_FOLDER = os.getenv("PDF_FOLDER", "./pdfs")
 
+DATASETS_FILE = os.getenv("DATASETS_FILE", "./datasets.csv")
+FEEDBACK_LOG_FILE = os.getenv("FEEDBACK_LOG_FILE", "./feedback_log.jsonl")
+
 RAG_RELEVANCE_THRESHOLD = float(os.getenv("RAG_RELEVANCE_THRESHOLD", "0.45"))
 QA_MATCH_THRESHOLD = float(os.getenv("QA_MATCH_THRESHOLD", "0.85"))
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "5"))
