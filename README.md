@@ -1,8 +1,12 @@
 # data.gov.in RAG Chatbot (Fully Offline / Local)
 
-A production-ready, fully offline RAG chatbot for **data.gov.in**, the Open Government Data (OGD) Platform India. All LLM inference runs locally via Ollama, embeddings are computed locally with `sentence-transformers`, and the vector store (ChromaDB) is persisted to disk. **Zero external API calls at runtime.**
+A fully offline RAG chatbot for **data.gov.in**, the Open Government Data (OGD) Platform India. All LLM inference runs locally via Ollama, embeddings are computed locally with `sentence-transformers`, and the vector store (ChromaDB) is persisted to disk. No external API calls at runtime.
+
+It is a reference implementation and demo, not a hardened service. Read [Limitations](#15-limitations) before putting it in front of untrusted users.
 
 The same codebase runs on a laptop, on a 32-core / 128 GB workstation, and on a GPU cloud VM — it auto-detects the host and picks an appropriate model + Ollama runtime configuration via the hardware-profile system in `app/profile.py`.
+
+For a module-by-module tour and the design rationale, see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ---
 
@@ -34,8 +38,8 @@ The chatbot:
 
 - Answers questions strictly from the seven data.gov.in PDFs in `pdfs/` (About, Help, FAQ, NDSAP Implementation Guidelines, Terms of Use, Miscellaneous Policies, Accessibility Statement) and from the 12 predefined Q&A pairs in `.env`.
 - Routes user messages to one of seven intents — `search`, `cdo_details`, `dataset_cdo_link`, `portal_feedback`, `contact_cdo`, `retry`, or `rag_chat` — via a small-model JSON classifier; the five non-RAG intents call mocked `app/apis.py` functions, and `retry` re-runs the user's clarified question through RAG with the predefined-Q&A fast-path disabled (no keyword-matching for dissatisfaction — the classifier learns it from few-shot examples).
-- Runs a three-stage moderation pipeline before generation: an LLM categorical moderator (`SAFE` / `POLITICAL` / `INJECTION` / `OOS`), a semantic scope allowlist, and an optional post-generation grounding verification. Defense is positional and structural, not enumerative.
-- **Streams** the RAG answer token-by-token over HTTP SSE and to the terminal — first words appear in ~1 s instead of the user staring at a blank prompt for 30 s.
+- Runs a three-stage moderation pipeline before generation: an LLM categorical moderator (`SAFE` / `POLITICAL` / `INJECTION` / `OOS`), a semantic scope allowlist, and an optional post-generation grounding check. The moderator classifies intent rather than matching a keyword blocklist.
+- Streams the RAG answer token-by-token over HTTP SSE and to the terminal, so the first tokens appear within about a second rather than after the whole reply is generated.
 - Requires disclaimer acceptance before every chat session and maintains per-session conversation history (in-memory).
 
 ---
@@ -51,7 +55,7 @@ The chatbot:
 | Vector store     | ChromaDB (persistent, cosine, on disk)     |
 | PDF parsing      | `pdfplumber` (sentence-aligned chunking, ~400 char target). |
 | API framework    | FastAPI + uvicorn + SSE streaming.         |
-| Session store    | In-memory Python dict (swap for Redis in prod). |
+| Session store    | In-memory Python dict; not persistent or multi-instance (see [Limitations](#15-limitations)). |
 | Intent routing   | Ollama single-shot JSON classification (helper model). |
 
 ### Per-turn flow
@@ -106,7 +110,7 @@ Detection is **not keyword-based**. The helper model recognises the *shape* of d
 
 ### Injection defense
 
-User input is wrapped in `<USER_INPUT>...</USER_INPUT>` tags in every LLM-facing prompt (moderator, intent classifier). The system prompt's Rule 10 instructs the main model to treat user messages as data, not as instructions. The categorical moderator has explicit `INJECTION` few-shots so override attempts (`ignore previous instructions`, `pretend you are`, `disregard your rules`) are caught structurally without enumerating bad words. Each layer is independent; the bot can only emit what's in the corpus, so even total moderation failure cannot make it answer outside scope.
+User input is wrapped in `<USER_INPUT>...</USER_INPUT>` tags in every LLM-facing prompt (moderator, intent classifier). The system prompt's Rule 10 instructs the main model to treat user messages as data, not as instructions. The categorical moderator has explicit `INJECTION` few-shots, so override attempts (`ignore previous instructions`, `pretend you are`, `disregard your rules`) are classified rather than matched against a word list. The layers are independent: if the moderator wrongly lets a message through, retrieval and the scope gate still pull the answer from the corpus. Treat it as defense in depth, not a guarantee — the grounding verifier is optional, and a determined prompt can still degrade answer quality. See [Limitations](#15-limitations).
 
 ---
 
@@ -158,7 +162,7 @@ The client:
 2. Ingests PDFs into ChromaDB (idempotent — skips when already populated).
 3. Runs startup health checks and prints the active hardware profile.
 4. Shows the disclaimer; waits for `I agree`.
-5. Loops on `You: ` prompt. **Bot output streams token-by-token** so the first words appear in ~1 second.
+5. Loops on the `You:` prompt; bot output streams token-by-token as the model produces it.
 6. Type `exit`, `quit`, or `bye` to leave.
 
 Example streaming output:
@@ -384,7 +388,7 @@ When `ENABLE_OUTPUT_VERIFICATION=true` and a RAG answer fails grounding:
 - **Streaming `/chat/.../stream`**: already-streamed tokens cannot be retracted, so a warning footer is *appended*:
   > [Note: I'm not fully confident this answer is grounded in the official data.gov.in documentation. Please verify on the portal before relying on it.]
 
-If you absolutely need verification to gate the answer, use the blocking endpoint. Otherwise the streamed UX is the better default.
+If verification must gate the answer, use the blocking endpoint; otherwise the streaming endpoint is the usual choice.
 
 ### JS / SSE client snippet
 
@@ -434,7 +438,7 @@ Chunking rules: sentence-aligned, ~400 char target / 600 char max, last sentence
 
 ## 9a. Dataset directory (backs the mocked APIs)
 
-The five intent-routed functions in `app/apis.py` (`search_datasets`, `get_cdo_details`, `get_dataset_cdo`, `submit_portal_feedback`, `contact_cdo_or_dataset_feedback`) are no longer returning hardcoded strings. They look up real records from a CSV (or JSON) file on disk — your local mirror of the data.gov.in dataset directory.
+The five intent-routed functions in `app/apis.py` (`search_datasets`, `get_cdo_details`, `get_dataset_cdo`, `submit_portal_feedback`, `contact_cdo_or_dataset_feedback`) look up records from a CSV (or JSON) file on disk — your local mirror of the data.gov.in dataset directory. They are stand-ins for the real portal APIs (see [Limitations](#15-limitations)).
 
 ### CSV schema
 
@@ -489,7 +493,7 @@ Each line looks like:
 }
 ```
 
-This is the simplest durable record. When you wire real email/ticketing, replace `_log_feedback()` in `app/apis.py` with the live POST and keep the JSONL as a local audit trail.
+When you wire up real email/ticketing, replace `_log_feedback()` in `app/apis.py` with the live POST and keep the JSONL as a local audit trail.
 
 ---
 
@@ -632,9 +636,22 @@ For air-gapped Docker, do the same on a machine with internet, then `docker save
 
 ## 15. Limitations
 
-- **Session store is in-memory.** Sessions are lost on restart. Swap for Redis for multi-instance / production.
-- **External APIs are mocked.** The five `app/apis.py` functions return canned responses. Replace bodies with real `httpx` calls when endpoints exist.
-- **Single-process ChromaDB.** Concurrent writers may conflict. Multiple workers behind a load balancer need a shared store (Postgres-backed Chroma, pgvector, etc.).
-- **Moderator is small-model-driven.** `llama3.2:1b` is well-suited to the constrained yes/no/label tasks but can be fooled by sufficiently clever inputs. The four-gate defense (input delimiters + categorical moderator + scope allowlist + corpus-as-floor) raises the bar a lot, but no single layer is bulletproof.
-- **Grounding verifier is opt-in.** Off by default on the smaller profiles. On `medium`/`large`/`xl` it's on by default; in streaming mode it appends a warning footer rather than retracting tokens.
-- **No GPU detection beyond NVIDIA.** Apple Silicon (Metal) and AMD ROCm aren't auto-detected — they still work via Ollama, but the profile auto-picker won't promote to `xl`. Use `PROFILE_OVERRIDE=xl` manually.
+This is a reference implementation and demo. It has **not** been hardened for public or multi-tenant deployment. Before exposing it beyond a trusted internal network, address at least the following.
+
+### Access control
+- **No authentication or authorization.** `POST /chat/{session_id}` accepts any request carrying a valid session ID, so anyone who learns or guesses an ID can read and write that session. Put the API behind an authenticating gateway (API key, OAuth, mTLS) before any untrusted exposure.
+- **`GET /sessions` lists every active session ID.** Handy for debugging, but it hands out exactly the IDs needed to reach other sessions. Remove or gate this endpoint outside local use.
+- **No rate limiting.** Each `rag_chat` turn fires several local LLM calls, so an unauthenticated caller can drive CPU/GPU load freely. Add rate limiting at the gateway.
+
+### State and scaling
+- **Sessions are an in-memory dict with no expiry or eviction.** Every session created is kept until the process restarts: memory grows without bound (a flood of `/session/create` is a denial-of-service vector), and all history is lost on restart. For anything real, back sessions with a store that has TTL/eviction (e.g. Redis).
+- **Single-process ChromaDB.** Concurrent writers can conflict; multiple workers behind a load balancer need a shared vector store (Postgres-backed Chroma, pgvector, etc.). The lazy singletons (Q&A embeddings, dataset-title embeddings, the embedder model) can also double-load under concurrent first requests on a multi-worker server.
+- **External APIs are mocked.** The five `app/apis.py` functions read from a local CSV/JSONL instead of calling real endpoints. Replace the bodies with real `httpx` calls when the endpoints exist.
+
+### Model behaviour
+- **The moderator is a small model, and its `OOS` verdict is a hard gate.** A message labelled `POLITICAL`/`INJECTION`/`OOS` is refused before retrieval; only a high-confidence predefined-Q&A match can override an `OOS` label. So a legitimate data.gov.in question the 1B model mislabels as out-of-scope is refused even though the corpus could have answered it. The layered design (input delimiters, the categorical moderator, the scope allowlist, and corpus-grounded generation) raises the bar against both over- and under-flagging, but no single layer is bulletproof. Moving to a larger helper model, or letting a strong corpus hit override an `OOS` label, are the obvious next steps.
+- **Grounding verifier is opt-in.** Off by default on `tiny`/`small`; on for `medium`/`large`/`gpu`/`xl`. In streaming mode it appends a warning footer rather than retracting already-sent tokens.
+- **The consent gate is lightweight.** The disclaimer accepts short affirmatives (`yes`, `ok`, `i agree`). Fine for a demo, but a weak record of informed consent for a government context; require an explicit phrase if you need a stronger gate.
+
+### Hardware detection
+- **GPU detection is NVIDIA-only.** Apple Silicon (Metal) and AMD ROCm aren't auto-detected — they still run via Ollama, but the profile picker won't promote to `gpu`/`xl`. Set `PROFILE_OVERRIDE` manually.

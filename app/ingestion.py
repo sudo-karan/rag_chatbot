@@ -60,7 +60,7 @@ def split_into_sentences(text: str) -> list[str]:
         parts = re.split(r'(?<=[.!?])\s+(?=[A-Zऀ-ॿ])', para)
         # Re-merge fragments split on an abbreviation/initial instead of a real
         # sentence boundary. Over-merging is harmless for size-based chunking;
-        # over-splitting fractures retrieval, which CLAUDE.md forbids.
+        # over-splitting fractures retrieval (the chunker must not split mid-sentence).
         merged: list[str] = []
         for part in parts:
             part = part.strip()

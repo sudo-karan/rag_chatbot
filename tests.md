@@ -49,7 +49,7 @@ Expected: the exact `.env` answer returned verbatim.
 
 ---
 
-## 3. Predefined Q&A — paraphrased (semantic match ≥ 0.75)
+## 3. Predefined Q&A — paraphrased (semantic match ≥ 0.85)
 
 - `Tell me about the Open Government Data Platform India`
 - `How do I create an account on data.gov.in?`
@@ -60,7 +60,7 @@ Expected: the exact `.env` answer returned verbatim.
 - `Who is allowed to publish datasets?`
 - `Where do I send a complaint about a dataset?`
 
-Expected: same predefined answers as section 2.
+Expected: tight paraphrases return the matching predefined answer from section 2. At the 0.85 threshold, looser paraphrases instead fall through to a grounded RAG answer from the corpus — still correct, just not the canned wording. See "Threshold safety net" below.
 
 ---
 
@@ -284,7 +284,7 @@ If you legitimately want a paraphrase to hit a canned answer, add the paraphrase
 | A PDF query lands in OOS | Lower `RAG_RELEVANCE_THRESHOLD` in `.env` (e.g. 0.40). |
 | A greeting lands in OOS | Add the phrase to `SCOPE_TOPICS` in `app/config.py`, or lower `SCOPE_THRESHOLD`. |
 | A search intent answers from RAG instead of the mocked API | Add a few-shot example to `INTENT_PROMPT_TEMPLATE` in `app/intent.py`. |
-| Predefined Q&A misses a paraphrase | Lower `QA_MATCH_THRESHOLD` in `.env` (e.g. 0.70). |
+| Predefined Q&A misses a paraphrase you want canned | Add it as its own `PREDEFINED_QA_N`, or lower `QA_MATCH_THRESHOLD` (e.g. 0.80). |
 
 ---
 
