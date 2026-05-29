@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 MAX_HISTORY_TURNS = 20
 
@@ -8,7 +8,7 @@ MAX_HISTORY_TURNS = 20
 @dataclass
 class Session:
     session_id: str
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     disclaimer_accepted: bool = False
     history: list[dict] = field(default_factory=list)
 

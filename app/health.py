@@ -2,20 +2,20 @@
 Also prints the active hardware profile so users see at boot which tier the
 host landed in and which models will be used."""
 from app.config import SCOPE_TOPICS, load_predefined_qa, ENABLE_OUTPUT_VERIFICATION
-from app.profile import ACTIVE_PROFILE, PROFILE_INFO
+from app.profile import format_profile_banner
 
 ALIGNMENT_THRESHOLD = 0.30
 
 
 def _print_profile_summary() -> None:
     # Read the *effective* settings from config (env overrides applied).
-    from app.config import OLLAMA_MODEL, OLLAMA_HELPER_MODEL, OLLAMA_KEEP_ALIVE
+    from app.config import (
+        OLLAMA_MODEL, OLLAMA_HELPER_MODEL, OLLAMA_KEEP_ALIVE, PROFILE_INFO,
+    )
+    print(format_profile_banner(PROFILE_INFO))
     print(
-        f"[profile] active={PROFILE_INFO['profile']} ({PROFILE_INFO['source']}) | "
-        f"main={OLLAMA_MODEL} helper={OLLAMA_HELPER_MODEL} | "
-        f"keep_alive={OLLAMA_KEEP_ALIVE} | "
-        f"verify={ENABLE_OUTPUT_VERIFICATION} | "
-        f"ram={PROFILE_INFO['ram_gb']}GB cores={PROFILE_INFO['cpu_cores']} gpu={PROFILE_INFO['gpu']}"
+        f"   models     : main={OLLAMA_MODEL} · helper={OLLAMA_HELPER_MODEL} · "
+        f"keep_alive={OLLAMA_KEEP_ALIVE} · verify={ENABLE_OUTPUT_VERIFICATION}"
     )
 
 

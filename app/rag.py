@@ -1,6 +1,6 @@
 from app.config import (
     SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_URL, RAG_TOP_K,
-    LLM_MODERATION_ENABLED, ENABLE_OUTPUT_VERIFICATION,
+    LLM_MODERATION_ENABLED, ENABLE_OUTPUT_VERIFICATION, KNOWN_TOPICS_SUMMARY,
 )
 from app.llm import chat, chat_stream
 from app.vector_store import query as vector_query
@@ -93,19 +93,28 @@ def _gate(user_message: str, support_text: str, known_topics_summary: str, skip_
       ("terminal", <final response string>) — caller emits and stops.
       ("rag", <context_str>)                — caller proceeds to LLM generation.
     """
+    oos_flagged = False
     if LLM_MODERATION_ENABLED:
         label = classify_moderation(user_message)
+        # INJECTION and POLITICAL are hard refusals — never overridden.
         if label == "INJECTION":
             return ("terminal", INJECTION_REFUSAL.format(support_text=support_text))
         if label == "POLITICAL":
             return ("terminal", POLITICAL_REFUSAL.format(support_text=support_text))
-        if label == "OOS":
-            return ("terminal", _oos(known_topics_summary, support_text))
+        # OOS is the softer signal. Hold it rather than refusing immediately: a
+        # high-confidence predefined-Q&A match below is strong evidence the
+        # message really is in scope (the Q&A bank is in-scope by construction),
+        # so an exact match overrides an OOS label the small moderator may have
+        # gotten wrong. With no Q&A match, the OOS refusal still stands.
+        oos_flagged = (label == "OOS")
 
     if not skip_predefined_qa:
         predefined = find_best_predefined_answer(user_message)
         if predefined:
             return ("terminal", predefined)
+
+    if oos_flagged:
+        return ("terminal", _oos(known_topics_summary, support_text))
 
     query_emb = embed_one(user_message)
     raw_chunks = vector_query(query_emb, n_results=RAG_TOP_K)
@@ -201,16 +210,17 @@ def answer_stream(
             yield VERIFY_WARNING_FOOTER
 
 
-def get_known_topics(n_sample_chunks: int = 10) -> str:
-    from app.vector_store import get_collection
+def get_known_topics() -> str:
+    """Curated, human-readable summary of in-scope themes for the OOS redirect.
+
+    Returns "" when the corpus is empty so we never promise topics we cannot
+    answer from. This replaces the old behaviour of slicing 60-char prefixes off
+    a nondeterministic set of chunks, which produced truncated fragments like
+    "NDSAP is the National Data Sharing and Accessibil"."""
+    from app.vector_store import collection_count
     try:
-        col = get_collection()
-        count = col.count()
-        if count == 0:
+        if collection_count() == 0:
             return ""
-        results = col.get(limit=min(n_sample_chunks, count), include=["documents"])
-        docs = results.get("documents", [])
-        topics = list({d[:60].strip() for d in docs if d.strip()})[:5]
-        return ", ".join(topics)
     except Exception:
         return ""
+    return KNOWN_TOPICS_SUMMARY
