@@ -17,6 +17,7 @@ from app.config import (
     OLLAMA_KEEP_ALIVE,
     OLLAMA_NUM_THREAD,
     OLLAMA_NUM_CTX,
+    OLLAMA_HELPER_NUM_CTX,
 )
 
 
@@ -83,13 +84,14 @@ def complete(
     temperature: float = 0.0,
     model: str | None = None,
     keep_alive: str | None = None,
+    num_ctx: int | None = None,
 ) -> str:
     """Generic single-shot completion (defaults to the MAIN model)."""
     client = _get_client()
     response = client.generate(
         model=model or OLLAMA_MODEL,
         prompt=prompt,
-        options=_options(temperature, max_tokens),
+        options=_options(temperature, max_tokens, num_ctx=num_ctx),
         keep_alive=keep_alive or OLLAMA_KEEP_ALIVE,
     )
     return response["response"].strip()
@@ -102,13 +104,19 @@ def helper(
     keep_alive: str | None = None,
 ) -> str:
     """Single-shot via the HELPER model (cheap, fast). Used by moderator, intent
-    classifier, and grounding verifier."""
+    classifier, and grounding verifier.
+
+    Passes an explicit num_ctx (OLLAMA_HELPER_NUM_CTX): the moderation and intent
+    prompts are long, and at Ollama's 2048-token default a longer prompt would be
+    silently truncated from the front — dropping the very instructions the helper
+    needs to do its job."""
     return complete(
         prompt,
         max_tokens=max_tokens,
         temperature=temperature,
         model=OLLAMA_HELPER_MODEL,
         keep_alive=keep_alive,
+        num_ctx=OLLAMA_HELPER_NUM_CTX,
     )
 
 

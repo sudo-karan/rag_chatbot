@@ -36,10 +36,12 @@ def _load() -> list[DatasetRecord]:
     path = Path(DATASETS_FILE)
     if not path.exists():
         print(
-            f"WARNING: Dataset directory not found at {path}. The five mocked "
-            "API intents (search / cdo_details / dataset_cdo_link / "
-            "portal_feedback / contact_cdo) will return graceful 'not configured' "
-            "responses. Drop a CSV at this path or set DATASETS_FILE in .env."
+            f"WARNING: Dataset directory not found at {path}. The three "
+            "read-backed API intents (search / cdo_details / dataset_cdo_link) "
+            "will return a graceful 'not configured' response. The feedback "
+            "intents (portal_feedback / contact_cdo) are unaffected — they log "
+            "to FEEDBACK_LOG_FILE regardless. Drop a CSV at this path or set "
+            "DATASETS_FILE in .env."
         )
         return []
     try:

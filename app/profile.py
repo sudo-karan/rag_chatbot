@@ -95,7 +95,7 @@ def _detect_gpu() -> bool:
             timeout=3,
         )
         return result.returncode == 0 and bool(result.stdout.strip())
-    except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+    except Exception:
         return False
 
 

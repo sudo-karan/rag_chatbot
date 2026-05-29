@@ -21,7 +21,6 @@ from pathlib import Path
 from app.config import FEEDBACK_LOG_FILE
 from app.datasets import (
     DatasetRecord,
-    all_records,
     get_by_contributor,
     get_by_url,
     is_configured,

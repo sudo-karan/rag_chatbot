@@ -1,6 +1,6 @@
 from app.config import (
     SUPPORT_EMAIL, SUPPORT_PHONE, SUPPORT_URL, RAG_TOP_K,
-    LLM_MODERATION_ENABLED, ENABLE_OUTPUT_VERIFICATION,
+    LLM_MODERATION_ENABLED, ENABLE_OUTPUT_VERIFICATION, KNOWN_TOPICS_SUMMARY,
 )
 from app.llm import chat, chat_stream
 from app.vector_store import query as vector_query
@@ -201,16 +201,17 @@ def answer_stream(
             yield VERIFY_WARNING_FOOTER
 
 
-def get_known_topics(n_sample_chunks: int = 10) -> str:
-    from app.vector_store import get_collection
+def get_known_topics() -> str:
+    """Curated, human-readable summary of in-scope themes for the OOS redirect.
+
+    Returns "" when the corpus is empty so we never promise topics we cannot
+    answer from. This replaces the old behaviour of slicing 60-char prefixes off
+    a nondeterministic set of chunks, which produced truncated fragments like
+    "NDSAP is the National Data Sharing and Accessibil"."""
+    from app.vector_store import collection_count
     try:
-        col = get_collection()
-        count = col.count()
-        if count == 0:
+        if collection_count() == 0:
             return ""
-        results = col.get(limit=min(n_sample_chunks, count), include=["documents"])
-        docs = results.get("documents", [])
-        topics = list({d[:60].strip() for d in docs if d.strip()})[:5]
-        return ", ".join(topics)
     except Exception:
         return ""
+    return KNOWN_TOPICS_SUMMARY

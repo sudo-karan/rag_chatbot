@@ -34,7 +34,7 @@ The chatbot:
 
 - Answers questions strictly from the seven data.gov.in PDFs in `pdfs/` (About, Help, FAQ, NDSAP Implementation Guidelines, Terms of Use, Miscellaneous Policies, Accessibility Statement) and from the 12 predefined Q&A pairs in `.env`.
 - Routes user messages to one of seven intents — `search`, `cdo_details`, `dataset_cdo_link`, `portal_feedback`, `contact_cdo`, `retry`, or `rag_chat` — via a small-model JSON classifier; the five non-RAG intents call mocked `app/apis.py` functions, and `retry` re-runs the user's clarified question through RAG with the predefined-Q&A fast-path disabled (no keyword-matching for dissatisfaction — the classifier learns it from few-shot examples).
-- Runs a four-stage moderation pipeline before generation: keyword pre-filter, LLM categorical moderator (`SAFE` / `POLITICAL` / `INJECTION` / `OOS`), semantic scope allowlist, and optional post-generation grounding verification. Defense is positional and structural, not enumerative.
+- Runs a three-stage moderation pipeline before generation: an LLM categorical moderator (`SAFE` / `POLITICAL` / `INJECTION` / `OOS`), a semantic scope allowlist, and an optional post-generation grounding verification. Defense is positional and structural, not enumerative.
 - **Streams** the RAG answer token-by-token over HTTP SSE and to the terminal — first words appear in ~1 s instead of the user staring at a blank prompt for 30 s.
 - Requires disclaimer acceptance before every chat session and maintains per-session conversation history (in-memory).
 
@@ -541,6 +541,7 @@ Profile-driven defaults: per-knob `.env` always wins; otherwise the active hardw
 | `OLLAMA_KEEP_ALIVE`          | profile keep_alive (`5m` … `-1`)         | How long Ollama keeps a model loaded after a call. |
 | `OLLAMA_NUM_THREAD`          | `0` (auto)                               | Ollama `num_thread` option.                        |
 | `OLLAMA_NUM_CTX`             | profile num_ctx                          | Context window of the main model.                  |
+| `OLLAMA_HELPER_NUM_CTX`      | `4096`                                   | Context window of the helper model. Set above Ollama's 2048 default so the long moderation / intent prompts are not truncated. |
 | `PROFILE_OVERRIDE`           | *(unset)*                                | Force a profile: `tiny`/`small`/`medium`/`large`/`xl`. |
 
 ### Vector store / RAG
@@ -564,6 +565,7 @@ Profile-driven defaults: per-knob `.env` always wins; otherwise the active hardw
 | `ENABLE_OUTPUT_VERIFICATION` | profile value (off for tiny/small)       | Post-generation grounding check.                   |
 | `SCOPE_THRESHOLD`            | `0.45`                                   | Min cosine similarity vs `SCOPE_TOPICS`.           |
 | `SCOPE_TOPICS`               | 38 phrases                               | JSON array of example utterances the bot will handle. |
+| `KNOWN_TOPICS_SUMMARY`       | curated prose list                       | Themes named in the out-of-scope redirect hint ("I do have information about: …"). |
 
 ### Mocked APIs (placeholders until real endpoints exist)
 

@@ -17,6 +17,38 @@ def extract_text_from_pdf(pdf_path: str) -> str:
     return "\n\n".join(text_parts)
 
 
+# Tokens that end in a period but usually do NOT end a sentence. After the naive
+# split we re-join any fragment ending in one of these, so honorifics and
+# references ("Dr. Sharma", "Shri. Kumar", "Sec. A", "etc. The ...") are not
+# fractured. Stored lowercase with internal dots removed.
+_ABBREVIATIONS = {
+    # honorifics / titles
+    "dr", "mr", "mrs", "ms", "smt", "shri", "sri", "kum", "km", "prof", "hon",
+    "capt", "col", "gen", "lt", "sgt", "rev", "st",
+    # structural references
+    "no", "nos", "sec", "secs", "art", "arts", "fig", "figs", "vol", "vols",
+    "para", "paras", "pp", "cl", "reg", "regs", "rule", "ch", "pt", "ann",
+    # organisations / business
+    "govt", "dept", "deptt", "ltd", "pvt", "co", "corp", "inst", "assn", "bros",
+    # latin / misc
+    "etc", "viz", "vs", "ie", "eg", "al", "cf", "ibid", "approx", "est",
+    "incl", "min", "max", "avg",
+}
+
+_LAST_TOKEN_RE = re.compile(r"""([A-Za-z][A-Za-z.&]*)\.["')\]]*\s*$""")
+
+
+def _ends_with_abbreviation(text: str) -> bool:
+    """True if `text` ends in a known abbreviation or a single-letter initial
+    (e.g. the "A." in "Dr. A. Sharma"), meaning the next fragment should be
+    rejoined rather than treated as a new sentence."""
+    m = _LAST_TOKEN_RE.search(text)
+    if not m:
+        return False
+    token = m.group(1).lower().replace(".", "")
+    return token in _ABBREVIATIONS or len(token) == 1
+
+
 def split_into_sentences(text: str) -> list[str]:
     text = re.sub(r"\n{3,}", "\n\n", text)
     paragraphs = text.split("\n\n")
@@ -26,10 +58,19 @@ def split_into_sentences(text: str) -> list[str]:
         if not para:
             continue
         parts = re.split(r'(?<=[.!?])\s+(?=[A-Zऀ-ॿ])', para)
+        # Re-merge fragments split on an abbreviation/initial instead of a real
+        # sentence boundary. Over-merging is harmless for size-based chunking;
+        # over-splitting fractures retrieval, which CLAUDE.md forbids.
+        merged: list[str] = []
         for part in parts:
             part = part.strip()
-            if part:
-                sentences.append(part)
+            if not part:
+                continue
+            if merged and _ends_with_abbreviation(merged[-1]):
+                merged[-1] = f"{merged[-1]} {part}"
+            else:
+                merged.append(part)
+        sentences.extend(merged)
     return sentences
 
 
@@ -110,10 +151,10 @@ def ingest_pdfs(force_reingest: bool = False):
         return
 
     print(f"Embedding {len(all_documents)} chunks...")
-    batch_size = 64
-    for start in range(0, len(all_documents), batch_size):
-        batch = all_documents[start : start + batch_size]
-        all_embeddings.extend(embed(batch))
+    # embed() already batches internally at EMBED_BATCH_SIZE, so a single call
+    # is enough — the previous outer loop re-batched at a hardcoded 64 that also
+    # ignored the configured batch size.
+    all_embeddings = embed(all_documents)
 
     add_documents(all_ids, all_embeddings, all_documents, all_metadatas)
     print(f"Ingestion complete. {len(all_documents)} chunks stored.")

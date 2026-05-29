@@ -15,6 +15,11 @@ OLLAMA_HELPER_MODEL = os.getenv("OLLAMA_HELPER_MODEL") or ACTIVE_PROFILE.helper_
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE") or ACTIVE_PROFILE.keep_alive
 OLLAMA_NUM_THREAD = int(os.getenv("OLLAMA_NUM_THREAD", ACTIVE_PROFILE.num_thread))
 OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", ACTIVE_PROFILE.num_ctx))
+# Helper-model context window. The moderation / intent prompts are long
+# (~1.5k tokens plus the recent-context block), so we set an explicit window
+# well above Ollama's 2048 default to avoid silent front-truncation of the
+# instructions. Cheap for the small helper model on every profile.
+OLLAMA_HELPER_NUM_CTX = int(os.getenv("OLLAMA_HELPER_NUM_CTX", "4096"))
 EMBED_BATCH_SIZE = int(os.getenv("EMBED_BATCH_SIZE", ACTIVE_PROFILE.embed_batch_size))
 
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@portal.gov")
@@ -102,6 +107,18 @@ def _load_scope_topics() -> list[str]:
 
 
 SCOPE_TOPICS = _load_scope_topics()
+
+# Curated, human-readable summary of the in-scope themes, shown in the
+# out-of-scope redirect hint. Kept as a clean prose list (not derived from raw
+# chunk text) so the suggestion reads well and is deterministic. Override via
+# env if your corpus covers different ground.
+KNOWN_TOPICS_SUMMARY = os.getenv(
+    "KNOWN_TOPICS_SUMMARY",
+    "data.gov.in and the Open Government Data Platform, the NDSAP policy, "
+    "Chief Data Officers and Nodal Officers, searching and downloading datasets, "
+    "data formats and APIs, contributing or suggesting datasets, accessibility "
+    "features, and the portal's terms of use",
+)
 
 
 def load_predefined_qa() -> list[dict]:
