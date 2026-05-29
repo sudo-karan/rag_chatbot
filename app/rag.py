@@ -93,19 +93,28 @@ def _gate(user_message: str, support_text: str, known_topics_summary: str, skip_
       ("terminal", <final response string>) — caller emits and stops.
       ("rag", <context_str>)                — caller proceeds to LLM generation.
     """
+    oos_flagged = False
     if LLM_MODERATION_ENABLED:
         label = classify_moderation(user_message)
+        # INJECTION and POLITICAL are hard refusals — never overridden.
         if label == "INJECTION":
             return ("terminal", INJECTION_REFUSAL.format(support_text=support_text))
         if label == "POLITICAL":
             return ("terminal", POLITICAL_REFUSAL.format(support_text=support_text))
-        if label == "OOS":
-            return ("terminal", _oos(known_topics_summary, support_text))
+        # OOS is the softer signal. Hold it rather than refusing immediately: a
+        # high-confidence predefined-Q&A match below is strong evidence the
+        # message really is in scope (the Q&A bank is in-scope by construction),
+        # so an exact match overrides an OOS label the small moderator may have
+        # gotten wrong. With no Q&A match, the OOS refusal still stands.
+        oos_flagged = (label == "OOS")
 
     if not skip_predefined_qa:
         predefined = find_best_predefined_answer(user_message)
         if predefined:
             return ("terminal", predefined)
+
+    if oos_flagged:
+        return ("terminal", _oos(known_topics_summary, support_text))
 
     query_emb = embed_one(user_message)
     raw_chunks = vector_query(query_emb, n_results=RAG_TOP_K)

@@ -3,7 +3,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from app.profile import ACTIVE_PROFILE, PROFILE_INFO
+from app.profile import detect_profile
+
+# Resolve the active hardware profile once, here (not at profile-import time),
+# so importers that set PROFILE_OVERRIDE first — e.g. the terminal client's
+# interactive picker — are honoured.
+ACTIVE_PROFILE, PROFILE_INFO = detect_profile()
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 

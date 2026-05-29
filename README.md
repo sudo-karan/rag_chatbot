@@ -72,10 +72,11 @@ The chatbot:
             │ 1. Categorical moderator    │  SAFE → continue
             │   (helper, max 4 tokens)    │  POLITICAL → POL refusal
             │                             │  INJECTION → INJ refusal
-            │                             │  OOS → OOS refusal
+            │                             │  OOS → held (see step 2)
             ├─────────────────────────────┤
-            │ 2. Predefined Q&A           │  semantic match ≥ 0.85 → emit
-            │   (skipped on retry)        │
+            │ 2. Predefined Q&A           │  match ≥ 0.85 → emit; a match
+            │   (skipped on retry)        │  also overrides a step-1 OOS
+            │                             │  label (else OOS stands)
             ├─────────────────────────────┤
             │ 3. Retrieve top-K chunks    │
             │   + filter by relevance     │
@@ -246,7 +247,7 @@ The active hardware profile auto-picks both models, but explicit `OLLAMA_MODEL` 
 
 ## 6b. Hardware profiles
 
-`app/profile.py` detects RAM, CPU cores, and NVIDIA GPU at boot, then picks one of five tiered profiles. Each profile bundles `{main_model, helper_model, keep_alive, num_thread, num_ctx, enable_verification, embed_batch_size}`.
+`app/profile.py` detects RAM, CPU cores, and NVIDIA GPU **+ VRAM**, then recommends one of six tiered profiles. Each profile bundles `{main_model, helper_model, keep_alive, num_thread, num_ctx, enable_verification, embed_batch_size}`. The recommendation is logged at startup; the operator confirms or changes it with `PROFILE_OVERRIDE` (the terminal client also offers an interactive prompt). Detection is lazy — nothing runs at import time.
 
 | Profile  | Trigger                  | Main model        | Helper model    | `keep_alive`   | Verifier |
 |----------|--------------------------|-------------------|-----------------|----------------|----------|
@@ -254,12 +255,22 @@ The active hardware profile auto-picks both models, but explicit `OLLAMA_MODEL` 
 | `small`  | 16–32 GB RAM, no GPU     | `llama3.1:8b`     | `llama3.2:1b`   | 5 m            | off      |
 | `medium` | 32–64 GB RAM, no GPU     | `llama3.1:8b`     | `llama3.2:1b`   | 30 m           | on       |
 | `large`  | 64+ GB RAM, no GPU       | `llama3.1:8b`     | `llama3.2:1b`   | forever        | on       |
-| `xl`     | any NVIDIA GPU detected  | `llama3.1:70b`    | `llama3.1:8b`   | forever        | on       |
+| `gpu`    | GPU, 8–40 GB VRAM        | `llama3.1:8b`     | `llama3.2:1b`   | forever        | on       |
+| `xl`     | GPU, ≥ 40 GB VRAM        | `llama3.1:70b`    | `llama3.1:8b`   | forever        | on       |
 
-At startup you'll see (after env overrides are applied):
+VRAM is summed across visible NVIDIA GPUs; the cutoffs are env-tunable via `PROFILE_XL_MIN_VRAM_GB` (default 40) and `PROFILE_GPU_MIN_VRAM_GB` (default 8). A detected GPU with unknown or sub-8 GB VRAM falls back to the RAM tiers (Ollama still offloads what fits).
+
+At startup (and as an interactive prompt in the terminal client) you'll see:
 
 ```
-[profile] active=large (auto) | main=llama3.1:8b helper=llama3.2:1b | keep_alive=-1 | verify=True | ram=128.0GB cores=32 gpu=False
+──────────────────────────────────────────────────────────────
+ Hardware profile
+   detected   : RAM 128.0 GB · 32 cores · GPU no
+   recommended: large
+   active     : large  (auto-detected)
+   change with PROFILE_OVERRIDE=tiny|small|medium|large|gpu|xl
+──────────────────────────────────────────────────────────────
+   models     : main=llama3.1:8b · helper=llama3.2:1b · keep_alive=-1 · verify=True
 ```
 
 ### Forcing a profile
@@ -267,7 +278,7 @@ At startup you'll see (after env overrides are applied):
 Auto-detection misreads container limits (a 128 GB host running an 8 GB container looks like `tiny` from inside). Force a tier:
 
 ```bash
-export PROFILE_OVERRIDE=large          # or tiny / small / medium / xl
+export PROFILE_OVERRIDE=large          # or tiny / small / medium / gpu / xl
 ```
 
 In Docker:
@@ -297,7 +308,7 @@ ENABLE_OUTPUT_VERIFICATION=true       # post-generation grounding check
 | Answers feel slow on a big box                     | `PROFILE_OVERRIDE=large` — pins models, raises ctx and embed batch.        |
 | Bot occasionally hallucinates a fact               | `ENABLE_OUTPUT_VERIFICATION=true` or jump a tier.                          |
 | Helper/moderator latency too high                  | Already on helper model; you can't go smaller without quality loss.        |
-| You added a GPU                                    | `PROFILE_OVERRIDE=xl` — or just leave auto, `nvidia-smi` check picks it up. |
+| You added a GPU                                    | Leave auto — VRAM ≥ 40 GB → `xl`, 8–40 GB → `gpu`. Or force `PROFILE_OVERRIDE=xl`/`gpu`. |
 | Container shows `tiny` profile but host is bigger  | `PROFILE_OVERRIDE=<tier>` — cgroup limits hid the host specs from psutil.  |
 
 Add or edit profiles in `app/profile.py:PROFILES` for custom tiers.
@@ -542,7 +553,9 @@ Profile-driven defaults: per-knob `.env` always wins; otherwise the active hardw
 | `OLLAMA_NUM_THREAD`          | `0` (auto)                               | Ollama `num_thread` option.                        |
 | `OLLAMA_NUM_CTX`             | profile num_ctx                          | Context window of the main model.                  |
 | `OLLAMA_HELPER_NUM_CTX`      | `4096`                                   | Context window of the helper model. Set above Ollama's 2048 default so the long moderation / intent prompts are not truncated. |
-| `PROFILE_OVERRIDE`           | *(unset)*                                | Force a profile: `tiny`/`small`/`medium`/`large`/`xl`. |
+| `PROFILE_OVERRIDE`           | *(unset)*                                | Force a profile: `tiny`/`small`/`medium`/`large`/`gpu`/`xl`. |
+| `PROFILE_XL_MIN_VRAM_GB`     | `40`                                     | Min summed VRAM (GB) to auto-select the `xl` (70B) profile. |
+| `PROFILE_GPU_MIN_VRAM_GB`    | `8`                                      | Min summed VRAM (GB) to auto-select the `gpu` (8B-on-GPU) profile. |
 
 ### Vector store / RAG
 

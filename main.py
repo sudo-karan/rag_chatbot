@@ -48,10 +48,12 @@ class SessionResponse(BaseModel):
 @app.get("/health")
 def health():
     from app.vector_store import collection_count
+    from app.config import PROFILE_INFO
     return {
         "status": "ok",
         "ollama_available": is_ollama_available(),
         "vector_store_chunks": collection_count(),
+        "profile": PROFILE_INFO,
     }
 
 
